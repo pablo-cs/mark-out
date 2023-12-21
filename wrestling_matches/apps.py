@@ -13,8 +13,8 @@ from models import (
 )
 
 base_url = "http://www.profightdb.com/"
-start_url = "http://www.profightdb.com/cards/pg1-no.html/"
-response = requests.get(start_url)
+page_url = "http://www.profightdb.com/cards/pg1-no.html/"
+response = requests.get(page_url)
 soup = BeautifulSoup(response.content, "html.parser")
 
 
@@ -24,28 +24,58 @@ class WrestlingMatchesConfig(AppConfig):
 
 
 def start_scrape():
-    rows = soup.find_all("tr", class_="gray")
-    for row in rows:
-        columns = row.find_all("td")
-        curr_date = columns[0].find("a").get_text()
-        curr_promotion = columns[1].find("a").get_text()
-        promotion_add = Promotion.objects.create(name=curr_promotion)
-        card_url = base_url + columns[2].find("a")["href"]
-        venue_scrape(card_url, curr_date, promotion_add)
+    pg_count = 1
+
+    # While the page is valid
+    while response.status_code == 200:
+        # Get all the rows for the page
+        rows = soup.find_all("tr", class_="gray")
+
+        # Go through each row
+        for row in rows:
+            # Get all the columns for the row
+            columns = row.find_all("td")
+
+            # Get the date, promotion, and url for the card
+            curr_date = columns[0].find("a").get_text()
+            curr_promotion = columns[1].find("a").get_text()
+            card_url = base_url + columns[2].find("a")["href"]
+
+            # Create Promotion object from promotion name
+            promotion_add = Promotion.objects.create(name=curr_promotion)
+
+            venue_scrape(card_url, curr_date, promotion_add)
+
+        # Increment page count
+        pg_count += 1
+
+        # Get new page url, update response object and soup
+        page_url = f"http://www.profightdb.com/cards/pg{pg_count}-no.html/"
+        response = requests.get(page_url)
+        soup = BeautifulSoup(response.content, "html.parser")
 
 
 def venue_scrape(card_url, curr_date, promotion_add):
+    # Get page url for card page and create soup
     card_response = requests.get(card_url)
     card_soup = BeautifulSoup(card_response.content, "html.parser")
+
+    # Get all the location elements and store the venue name and location
     venue_elem = card_soup.find_all(
         "a", href=lambda href: href and href.startswith("/locations")
     )
     curr_venue = venue_elem[0].get_text()
     curr_location = venue_elem[1].get_text() + ", " + venue_elem[2].get_text()
+
+    # Create Venue object from venue name and location
+    venue_add = Venue.objects.create(name=curr_venue, location=curr_location)
+
+    # Get the name of the current card
     curr_card_name = (
         card_soup.find("div", class_="right-content").find("h1").get_text().strip()
     )
-    venue_add = Venue.objects.create(name=curr_venue, location=curr_location)
+
+    # Create Event object from card name, venue, promotion, and date
     event_add = Event.objects.create(
         name=curr_card_name,
         venue=venue_add,
@@ -53,25 +83,40 @@ def venue_scrape(card_url, curr_date, promotion_add):
         date=curr_date,
     )
 
+    # Start scraping match table
+    match_scrape(event_add, card_soup)
+
     return
 
 
 def match_scrape(event_add, card_soup):
+    # Scraping table until have reached the rows
     table = card_soup.find("div", class_="table-wrapper")
     table_body = table.find("table")
     rows = table_body.find_all("tr")[1:]
+
+    # For every row in match table
     for row in rows:
+        # Get every column in the row
         columns = row.find_all("td")
+
+        # Result is True if is == def, otherwise False (draw)
         curr_result = columns[2].get_text()[:3].lower() == "def"
+
+        # Get duration, stipulation, and title
         curr_length = columns[4].get_text()
         curr_stipulation = columns[5].get_text()
         curr_title = columns[6].get_text()
+
+        # Create Match object from Event, length, stipulation, and title
         match_add = Match.objects.create(
             event=event_add,
             length=curr_length,
             stipulation=curr_stipulation,
             title=curr_title,
         )
+
+        # Scrape participants
         participant_scrape(match_add, curr_result)
 
 
