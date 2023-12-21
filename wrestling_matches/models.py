@@ -30,6 +30,7 @@ class Match(models.Model):
 
 class TagTeam(models.Model):
     name = models.CharField(max_length=100)
+    wrestlers = models.ManyToManyField("Wrestler", related_name="tag_teams")
 
 
 class Wrestler(models.Model):
