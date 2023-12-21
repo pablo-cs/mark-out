@@ -29,7 +29,7 @@ def start_scrape():
         columns = row.find_all("td")
         curr_date = columns[0].find("a").get_text()
         curr_promotion = columns[1].find("a").get_text()
-        promotion_add = Promotion(name=curr_promotion)
+        promotion_add = Promotion.objects.create(name=curr_promotion)
         card_url = base_url + columns[2].find("a")["href"]
         venue_scrape(card_url, curr_date, promotion_add)
 
@@ -45,8 +45,8 @@ def venue_scrape(card_url, curr_date, promotion_add):
     curr_card_name = (
         card_soup.find("div", class_="right-content").find("h1").get_text().strip()
     )
-    venue_add = Venue(name=curr_venue, location=curr_location)
-    event_add = Event(
+    venue_add = Venue.objects.create(name=curr_venue, location=curr_location)
+    event_add = Event.objects.create(
         name=curr_card_name,
         venue=venue_add,
         promotion=promotion_add,
@@ -66,7 +66,7 @@ def match_scrape(event_add, card_soup):
         curr_length = columns[4].get_text()
         curr_stipulation = columns[5].get_text()
         curr_title = columns[6].get_text()
-        match_add = Match(
+        match_add = Match.objects.create(
             event=event_add,
             length=curr_length,
             stipulation=curr_stipulation,
@@ -92,14 +92,16 @@ def token_scrape(winner, tokens, match_add):
                 current_site_id = ""
                 if True:  # Replace with current site id is found in DB
                     current_name = ""
-                    wrestler_add = Wrestler(site_id=current_site_id, name=current_name)
+                    wrestler_add = Wrestler.objects.create(
+                        site_id=current_site_id, name=current_name
+                    )
                 current_wrestler = ""  # Replace with wrestler retrieved by site id
                 if True:  # replace with if ring name exists already
-                    ring_name_add = RingName(
+                    ring_name_add = RingName.objects.create(
                         name=current_ring_name, wrestler=current_wrestler
                     )
                 current_ring_model = ""  # Retrieve ring name model
-                match_participant_add = MatchParticipant(
+                match_participant_add = MatchParticipant.objects.create(
                     ring_name=current_ring_model,
                     match=match_add,
                     is_tag_team=True,
@@ -111,14 +113,16 @@ def token_scrape(winner, tokens, match_add):
             current_site_id = ""
             if True:  # Replace with current site id is found in DB
                 current_name = ""
-                wrestler_add = Wrestler(site_id=current_site_id, name=current_name)
+                wrestler_add = Wrestler.objects.create(
+                    site_id=current_site_id, name=current_name
+                )
             current_wrestler = ""  # Replace with wrestler retrieved by site id
             if True:  # replace with if ring name exists already
-                ring_name_add = RingName(
+                ring_name_add = RingName.objects.create(
                     name=current_ring_name, wrestler=current_wrestler
                 )
             current_ring_model = ""  # Retrieve ring name model
-            match_participant_add = MatchParticipant(
+            match_participant_add = MatchParticipant.objects.create(
                 ring_name=current_ring_model,
                 match=match_add,
                 is_tag_team=False,
