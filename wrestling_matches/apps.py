@@ -13,7 +13,8 @@ from models import (
 )
 
 base_url = "http://www.profightdb.com/"
-response = requests.get(url)
+start_url = "http://www.profightdb.com/cards/pg1-no.html/"
+response = requests.get(start_url)
 soup = BeautifulSoup(response.content, "html.parser")
 
 
@@ -22,44 +23,55 @@ class WrestlingMatchesConfig(AppConfig):
     name = "wrestling_matches"
 
 
-# Import necessary libraries
-import requests
-from bs4 import BeautifulSoup
+def start_scrape():
+    rows = soup.find_all("tr", class_="gray")
+    for row in rows:
+        columns = row.find_all("td")
+        curr_date = columns[0].find("a").get_text()
+        curr_promotion = columns[1].find("a").get_text()
+        promotion_add = Promotion(name=curr_promotion)
+        card_url = base_url + columns[2].find("a")["href"]
+        venue_scrape(card_url, curr_date, promotion_add)
 
 
-def promotion_scrape():
-    current_date = 0
-    current_promotion = ""
-    current_card_name = ""
-    promotion_add = Promotion(name=current_promotion)
-    venue_scrape(current_card_name, current_date, promotion_add)
-    return
-
-
-def venue_scrape(current_card_name, current_date, promotion_add):
-    current_venue = ""
-    current_location = ""
-    venue_add = Venue(name=current_venue, location=current_location)
+def venue_scrape(card_url, curr_date, promotion_add):
+    card_response = requests.get(card_url)
+    card_soup = BeautifulSoup(card_response.content, "html.parser")
+    venue_elem = card_soup.find_all(
+        "a", href=lambda href: href and href.startswith("/locations")
+    )
+    curr_venue = venue_elem[0].get_text()
+    curr_location = venue_elem[1].get_text() + ", " + venue_elem[2].get_text()
+    curr_card_name = (
+        card_soup.find("div", class_="right-content").find("h1").get_text().strip()
+    )
+    venue_add = Venue(name=curr_venue, location=curr_location)
     event_add = Event(
-        name=current_card_name,
+        name=curr_card_name,
         venue=venue_add,
         promotion=promotion_add,
-        date=current_date,
+        date=curr_date,
     )
 
     return
 
 
-def match_scrape(event_add):
-    current_length = 0
-    current_stipulation = ""
-    current_title = ""
-    match_add = Match(
-        event=event_add,
-        length=current_length,
-        stipulation=current_stipulation,
-        title=current_title,
-    )
+def match_scrape(event_add, card_soup):
+    table = card_soup.find("div", class_="table-wrapper")
+    table_body = table.find("table")
+    rows = table_body.find_all("tr")[1:]
+    for row in rows:
+        columns = row.find_all("td")
+        curr_result = columns[2].get_text()
+        curr_length = columns[4].get_text()
+        curr_stipulation = columns[5].get_text()
+        curr_title = columns[6].get_text()
+        match_add = Match(
+            event=event_add,
+            length=curr_length,
+            stipulation=curr_stipulation,
+            title=curr_title,
+        )
 
 
 def participant_scrape(match_add):
