@@ -62,7 +62,7 @@ def match_scrape(event_add, card_soup):
     rows = table_body.find_all("tr")[1:]
     for row in rows:
         columns = row.find_all("td")
-        curr_result = columns[2].get_text()
+        curr_result = columns[2].get_text()[:3].lower() == "def"
         curr_length = columns[4].get_text()
         curr_stipulation = columns[5].get_text()
         curr_title = columns[6].get_text()
@@ -72,13 +72,13 @@ def match_scrape(event_add, card_soup):
             stipulation=curr_stipulation,
             title=curr_title,
         )
+        participant_scrape(match_add, curr_result)
 
 
-def participant_scrape(match_add):
+def participant_scrape(match_add, curr_result):
     left_tokens = ""
     right_tokens = ""
-    has_a_winner = False
-    token_scrape(has_a_winner, left_tokens, match_add)
+    token_scrape(curr_result, left_tokens, match_add)
     token_scrape(False, right_tokens, match_add)
 
 
