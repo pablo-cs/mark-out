@@ -1,6 +1,8 @@
+from datetime import timedelta
 from bs4 import BeautifulSoup
 import re
 import requests
+from dateutil.parser import parse
 from models import (
     Wrestler,
     Match,
@@ -31,13 +33,17 @@ def start_scrape():
             # Get all the columns for the row
             columns = row.find_all("td")
 
-            # Get the date, promotion, and url for the card
-            curr_date = columns[0].find("a").get_text()
+            # Get the date and convert to a Date object
+            curr_date = parse(columns[0].find("a").get_text())
+
+            # Get the promotion and url card
             curr_promotion = columns[1].find("a").get_text()
             card_url = base_url + columns[2].find("a")["href"]
 
-            # Create Promotion object from promotion name
-            promotion_add = Promotion.objects.create(name=curr_promotion)
+            # Create Promotion object from promotion name or retrieve existing promotion
+            promotion_add, created = Promotion.objects.get_or_create(
+                name=curr_promotion
+            )
 
             venue_scrape(card_url, curr_date, promotion_add)
 
@@ -98,14 +104,19 @@ def venue_scrape(card_url, curr_date, promotion_add):
         right_tokens = str(columns[2]).split(",")
 
         # Get duration, stipulation, and title
-        curr_length = columns[3].get_text()
+        duration_str = columns[3].get_text()
+        curr_duration = None
+        if not duration_str.isspace():
+            minutes, seconds = map(int, duration_str.split(":"))
+            curr_duration = timedelta(minutes=minutes, seconds=seconds)
+
         curr_stipulation = columns[4].get_text()
         curr_title = columns[5].get_text()
 
         # Create Match object from Event, length, stipulation, and title
         match_add = Match.objects.create(
             event=event_add,
-            length=curr_length,
+            duration=curr_duration,
             stipulation=curr_stipulation,
             title=curr_title,
         )
@@ -146,7 +157,7 @@ def token_scrape(winner, tokens, match_add):
                     new_wrestler_soup = BeautifulSoup(
                         new_wrestler_response.content, "html.parser"
                     )
-                    curr_wrestler_name = new_wrestler_soup.find("h1").get_text()
+                    curr_wrestler_name = new_wrestler_soup.find("h1").get_text().strip()
 
                     wrestler_add = Wrestler.objects.create(
                         site_id=curr_site_id, name=curr_wrestler_name
@@ -159,18 +170,12 @@ def token_scrape(winner, tokens, match_add):
 
                 current_ring_name = tag_member_soup.get_text()
 
-                ring_name_exists = RingName.objects.filter(
-                    name=current_ring_name, wrestler=curr_wrestler
-                ).exists()
+                if current_ring_name.startswith("amp;"):
+                    current_ring_name = current_ring_name.replace("amp;", "", 1).strip()
 
-                if not ring_name_exists:  # replace with if ring name exists already
-                    ring_name_add = RingName.objects.create(
-                        name=current_ring_name, wrestler=curr_wrestler
-                    )
-
-                current_ring_model = RingName.objects.get(
+                current_ring_model, created = RingName.objects.get_or_create(
                     name=current_ring_name, wrestler=curr_wrestler
-                )  # Retrieve ring name model
+                )
 
                 match_participant_add = MatchParticipant.objects.create(
                     ring_name=current_ring_model,
@@ -207,16 +212,8 @@ def token_scrape(winner, tokens, match_add):
 
             current_ring_name = token_soup.get_text()
 
-            ring_name_exists = RingName.objects.filter(
-                name=current_ring_name, wrestler=curr_wrestler
-            ).exists()
-
-            if not ring_name_exists:  # replace with if ring name exists already
-                ring_name_add = RingName.objects.create(
-                    name=current_ring_name, wrestler=curr_wrestler
-                )
-
-            current_ring_model = RingName.objects.get(
+            # Create a RingName object if not found, or get the one found
+            current_ring_model, created = RingName.objects.get_or_create(
                 name=current_ring_name, wrestler=curr_wrestler
             )
 
