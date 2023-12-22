@@ -23,7 +23,7 @@ class Event(models.Model):
 
 class Match(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, default=1)
-    length = models.DurationField(default=timedelta(days=0))
+    duration = models.DurationField(default=timedelta(days=0), null=True, blank=True)
     stipulation = models.CharField(max_length=50, null=True, blank=True)
     title = models.CharField(max_length=100)
 
