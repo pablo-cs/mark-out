@@ -13,7 +13,7 @@ from models import (
 )
 
 base_url = "http://www.profightdb.com/"
-page_url = "http://www.profightdb.com/cards/pg1-no.html/"
+page_url = "http://www.profightdb.com/cards/pg1-no.html"
 response = requests.get(page_url)
 soup = BeautifulSoup(response.content, "html.parser")
 
@@ -119,12 +119,12 @@ def token_scrape(winner, tokens, match_add):
     for token in tokens:
         # Convert text to scrapeable HTML
         token_soup = BeautifulSoup(token, "html.parser")
-        if token.find(" & ") != -1:
+        if token.find("&") != -1:
             # Split the text into the individual wreslter HTML parts
             tag_tokens = token.split("&")
 
             # Get the tag team name
-            current_team_name = token.get_text()
+            current_team_name = token_soup.get_text()
 
             tag_team_add = TagTeam.objects.create(name=current_team_name)
             for current_ring_elem in tag_tokens:
@@ -132,6 +132,8 @@ def token_scrape(winner, tokens, match_add):
 
                 # Extract the site id with regex
                 pattern = r"/wrestlers/.*-(\d+).html"
+                if tag_member_soup.find("a") is None:
+                    continue
                 curr_link = tag_member_soup.find("a")["href"]
                 match = re.search(pattern, curr_link)
                 curr_site_id = match.group(1)
@@ -155,18 +157,21 @@ def token_scrape(winner, tokens, match_add):
 
                 tag_team_add.wrestlers.add(curr_wrestler)
 
-                current_ring_name = current_ring_elem.get_text()
+                current_ring_name = tag_member_soup.get_text()
 
                 ring_name_exists = RingName.objects.filter(
                     name=current_ring_name, wrestler=curr_wrestler
                 ).exists()
+
                 if not ring_name_exists:  # replace with if ring name exists already
                     ring_name_add = RingName.objects.create(
                         name=current_ring_name, wrestler=curr_wrestler
                     )
+
                 current_ring_model = RingName.objects.get(
                     name=current_ring_name, wrestler=curr_wrestler
                 )  # Retrieve ring name model
+
                 match_participant_add = MatchParticipant.objects.create(
                     ring_name=current_ring_model,
                     match=match_add,
@@ -177,6 +182,8 @@ def token_scrape(winner, tokens, match_add):
         else:
             # Extract the site id with regex
             pattern = r"/wrestlers/.*-(\d+).html"
+            if token_soup.find("a") is None:
+                continue
             curr_link = token_soup.find("a")["href"]
             match = re.search(pattern, curr_link)
             curr_site_id = match.group(1)
@@ -198,7 +205,7 @@ def token_scrape(winner, tokens, match_add):
             # Get the wrestler at the site id
             curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
 
-            current_ring_name = current_ring_elem.get_text()
+            current_ring_name = token_soup.get_text()
 
             ring_name_exists = RingName.objects.filter(
                 name=current_ring_name, wrestler=curr_wrestler
