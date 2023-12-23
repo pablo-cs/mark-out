@@ -95,13 +95,13 @@ def venue_scrape(card_url, curr_date, promotion_add):
         columns = row.find_all("td")[1:7]
 
         # Get wrestlers in winners column
-        left_tokens = str(columns[0]).split(",")
+        left_tokens = add_tags(str(columns[0]).split(">, <"))
 
         # Result is True if is == def, otherwise False (draw)
         curr_result = columns[1].get_text()[:3].lower() == "def"
 
         # Get wrestlers in losers column
-        right_tokens = str(columns[2]).split(",")
+        right_tokens = add_tags(str(columns[2]).split(">, <"))
 
         # Get duration, stipulation, and title
         duration_str = columns[3].get_text()
@@ -223,3 +223,14 @@ def token_scrape(winner, tokens, match_add):
                 is_tag_team=False,
                 winner=winner,
             )
+
+
+def add_tags(strings):
+    modified_strings = []
+    for string in strings:
+        if not string.startswith("<"):
+            string = "<" + string
+        if not string.endswith(">"):
+            string += ">"
+        modified_strings.append(string)
+    return modified_strings
