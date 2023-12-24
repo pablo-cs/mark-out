@@ -21,6 +21,7 @@ soup = BeautifulSoup(response.content, "html.parser")
 
 
 def start_scrape():
+    """ """
     pg_count = 1
 
     # While the page is valid
@@ -57,6 +58,10 @@ def start_scrape():
 
 
 def venue_scrape(card_url, curr_date, promotion_add):
+    """
+    Scrapes the venue, event, and match information from a card
+    """
+
     # Get page url for card page and create soup
     card_response = requests.get(card_url)
     card_soup = BeautifulSoup(card_response.content, "html.parser")
@@ -127,6 +132,11 @@ def venue_scrape(card_url, curr_date, promotion_add):
 
 
 def token_scrape(winner, tokens, match_add):
+    """
+    Scrapes participant information, adding new wrestlers and ring names
+    as they appear, and adding the match participant
+    """
+
     for token in tokens:
         # Convert text to scrapeable HTML
         token_soup = BeautifulSoup(token, "html.parser")
@@ -141,88 +151,12 @@ def token_scrape(winner, tokens, match_add):
             for current_ring_elem in tag_tokens:
                 tag_member_soup = BeautifulSoup(current_ring_elem, "html.parser")
 
-                # Extract the site id with regex
-                pattern = r"/wrestlers/.*-(\d+).html"
-                if tag_member_soup.find("a") is None:
-                    continue
-                curr_link = tag_member_soup.find("a")["href"]
-                match = re.search(pattern, curr_link)
-                curr_site_id = match.group(1)
-                wrestler_exists = Wrestler.objects.filter(site_id=curr_site_id).exists()
-
-                # Add wrestler if it doesn't exist already in the database
-                if not wrestler_exists:
-                    # Go to original wrestler's site and extract name
-                    new_wrestler_response = requests.get(base_url + curr_link)
-                    new_wrestler_soup = BeautifulSoup(
-                        new_wrestler_response.content, "html.parser"
-                    )
-                    curr_wrestler_name = new_wrestler_soup.find("h1").get_text().strip()
-
-                    wrestler_add = Wrestler.objects.create(
-                        site_id=curr_site_id, name=curr_wrestler_name
-                    )
-
-                # Get the wrestler at the site id
-                curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
-
-                tag_team_add.wrestlers.add(curr_wrestler)
-
-                current_ring_name = tag_member_soup.get_text()
-
-                if current_ring_name.startswith("amp;"):
-                    current_ring_name = current_ring_name.replace("amp;", "", 1).strip()
-
-                current_ring_model, created = RingName.objects.get_or_create(
-                    name=current_ring_name, wrestler=curr_wrestler
+                participant_scrape(
+                    tag_member_soup, winner, match_add, True, tag_team_add
                 )
 
-                match_participant_add = MatchParticipant.objects.create(
-                    ring_name=current_ring_model,
-                    match=match_add,
-                    is_tag_team=True,
-                    tag_team=tag_team_add,
-                    winner=winner,
-                )
         else:
-            # Extract the site id with regex
-            pattern = r"/wrestlers/.*-(\d+).html"
-            if token_soup.find("a") is None:
-                continue
-            curr_link = token_soup.find("a")["href"]
-            match = re.search(pattern, curr_link)
-            curr_site_id = match.group(1)
-            wrestler_exists = Wrestler.objects.filter(site_id=curr_site_id).exists()
-
-            # Add wrestler if it doesn't exist already in the database
-            if not wrestler_exists:
-                # Go to original wrestler's site and extract name
-                new_wrestler_response = requests.get(base_url + curr_link)
-                new_wrestler_soup = BeautifulSoup(
-                    new_wrestler_response.content, "html.parser"
-                )
-                curr_wrestler_name = new_wrestler_soup.find("h1").get_text()
-
-                wrestler_add = Wrestler.objects.create(
-                    site_id=curr_site_id, name=curr_wrestler_name
-                )
-
-            # Get the wrestler at the site id
-            curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
-
-            current_ring_name = token_soup.get_text()
-
-            # Create a RingName object if not found, or get the one found
-            current_ring_model, created = RingName.objects.get_or_create(
-                name=current_ring_name, wrestler=curr_wrestler
-            )
-
-            match_participant_add = MatchParticipant.objects.create(
-                ring_name=current_ring_model,
-                match=match_add,
-                is_tag_team=False,
-                winner=winner,
-            )
+            participant_scrape(token_soup, False, match_add)
 
 
 def add_tags(strings):
@@ -234,3 +168,48 @@ def add_tags(strings):
             string += ">"
         modified_strings.append(string)
     return modified_strings
+
+
+def participant_scrape(
+    participant_soup, winner, match_add, is_tag_member=False, tag_team_add=None
+):
+    # Extract the site id with regex
+    pattern = r"/wrestlers/.*-(\d+).html"
+    if participant_soup.find("a") is None:
+        return
+    curr_link = participant_soup.find("a")["href"]
+    match = re.search(pattern, curr_link)
+    curr_site_id = match.group(1)
+    wrestler_exists = Wrestler.objects.filter(site_id=curr_site_id).exists()
+
+    # Add wrestler if it doesn't exist already in the database
+    if not wrestler_exists:
+        # Go to original wrestler's site and extract name
+        new_wrestler_response = requests.get(base_url + curr_link)
+        new_wrestler_soup = BeautifulSoup(new_wrestler_response.content, "html.parser")
+        curr_wrestler_name = new_wrestler_soup.find("h1").get_text()
+
+        wrestler_add = Wrestler.objects.create(
+            site_id=curr_site_id, name=curr_wrestler_name
+        )
+
+    # Get the wrestler at the site id
+    curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
+
+    if is_tag_member and tag_team_add is not None:
+        tag_team_add.wrestlers.add(curr_wrestler)
+
+    current_ring_name = participant_soup.get_text()
+
+    # Create a RingName object if not found, or get the one found
+    current_ring_model, created = RingName.objects.get_or_create(
+        name=current_ring_name, wrestler=curr_wrestler
+    )
+
+    match_participant_add = MatchParticipant.objects.create(
+        ring_name=current_ring_model,
+        match=match_add,
+        is_tag_team=is_tag_member,
+        tag_team=tag_team_add,
+        winner=winner,
+    )
