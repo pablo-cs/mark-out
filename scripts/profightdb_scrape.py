@@ -1,5 +1,6 @@
 from datetime import timedelta
 from bs4 import BeautifulSoup
+import logging
 import re
 import requests
 from dateutil.parser import parse
@@ -18,6 +19,7 @@ base_url = "http://www.profightdb.com/"
 page_url = "http://www.profightdb.com/cards/pg1-no.html"
 response = requests.get(page_url)
 soup = BeautifulSoup(response.content, "html.parser")
+logging.basicConfig(level=logging.INFO)
 
 
 def start_scrape():
@@ -27,6 +29,8 @@ def start_scrape():
     # While the page is valid
     while response.status_code == 200:
         # Get all the rows for the page
+        logging.info(f"Scraping page {pg_count}")
+
         rows = soup.find_all("tr", class_="gray")
 
         # Go through each row
@@ -45,9 +49,14 @@ def start_scrape():
             promotion_add, created = Promotion.objects.get_or_create(
                 name=curr_promotion
             )
+            logging.info(f"Scraping promotion: {curr_promotion}")
 
-            venue_scrape(card_url, curr_date, promotion_add)
+            card_response = requests.get(card_url)
+            card_soup = BeautifulSoup(card_response.content, "html.parser")
 
+            venue_add = venue_scrape(card_soup, curr_date, promotion_add)
+            event_add = event_scrape(card_soup, venue_add, promotion_add, curr_date)
+            card_scrape(card_soup, event_add)
         # Increment page count
         pg_count += 1
 
@@ -57,14 +66,11 @@ def start_scrape():
         soup = BeautifulSoup(response.content, "html.parser")
 
 
-def venue_scrape(card_url, curr_date, promotion_add):
+def venue_scrape(card_soup, curr_date, promotion_add):
     """
-    Scrapes the venue, event, and match information from a card
+    Scrapes the venue information from a given card and returns
+    an Venue object
     """
-
-    # Get page url for card page and create soup
-    card_response = requests.get(card_url)
-    card_soup = BeautifulSoup(card_response.content, "html.parser")
 
     # Get all the location elements and store the venue name and location
     venue_elem = card_soup.find_all(
@@ -74,27 +80,41 @@ def venue_scrape(card_url, curr_date, promotion_add):
     curr_location = venue_elem[1].get_text() + ", " + venue_elem[2].get_text()
 
     # Create Venue object from venue name and location
-    venue_add = Venue.objects.create(name=curr_venue, location=curr_location)
+    logging.info(f"Scraping Venue: {curr_venue} , {curr_location}")
 
+    return Venue.objects.create(name=curr_venue, location=curr_location)
+
+
+def event_scrape(card_soup, venue_add, promotion_add, curr_date):
+    """
+    Scrapes the event information from a given card and returns
+    an Event object
+    """
     # Get the name of the current card
-    curr_card_name = (
+    curr_event_name = (
         card_soup.find("div", class_="right-content").find("h1").get_text().strip()
     )
 
+    logging.info(f"Scraping Event: {curr_event_name}")
+
     # Create Event object from card name, venue, promotion, and date
-    event_add = Event.objects.create(
-        name=curr_card_name,
+    return Event.objects.create(
+        name=curr_event_name,
         venue=venue_add,
         promotion=promotion_add,
         date=curr_date,
     )
 
+
+def card_scrape(card_soup, event_add):
+    """
+    Scrapes the matches from a card
+    """
     # Scraping table until have reached the rows
     table = card_soup.find("div", class_="table-wrapper")
     table_body = table.find("table")
     rows = table_body.find_all("tr")[1:]
 
-    # For every row in match table
     for row in rows:
         # Get every column in the row
         columns = row.find_all("td")[1:7]
@@ -102,11 +122,15 @@ def venue_scrape(card_url, curr_date, promotion_add):
         # Get wrestlers in winners column
         left_tokens = add_tags(str(columns[0]).split(">, <"))
 
+        logging.info(f"Scraping Winner Column: {left_tokens}")
+
         # Result is True if is == def, otherwise False (draw)
         curr_result = columns[1].get_text()[:3].lower() == "def"
+        logging.info(f"Scraping Result: {curr_result}")
 
         # Get wrestlers in losers column
         right_tokens = add_tags(str(columns[2]).split(">, <"))
+        logging.info(f"Scraping Loser Column: {right_tokens}")
 
         # Get duration, stipulation, and title
         duration_str = columns[3].get_text()
@@ -114,9 +138,13 @@ def venue_scrape(card_url, curr_date, promotion_add):
         if not duration_str.isspace():
             minutes, seconds = map(int, duration_str.split(":"))
             curr_duration = timedelta(minutes=minutes, seconds=seconds)
+            logging.info(f"Scraping Match Duration: {curr_duration}")
 
         curr_stipulation = columns[4].get_text()
+        logging.info(f"Scraping Match Stipulation: {curr_stipulation}")
+
         curr_title = columns[5].get_text()
+        logging.info(f"Scraping Match Title(s): {curr_title}")
 
         # Create Match object from Event, length, stipulation, and title
         match_add = Match.objects.create(
@@ -127,7 +155,10 @@ def venue_scrape(card_url, curr_date, promotion_add):
         )
 
         # Scrape participants
+        logging.info("Scraping Left Columm Participants")
         token_scrape(curr_result, left_tokens, match_add)
+
+        logging.info("Scraping Right Columm Participants")
         token_scrape(False, right_tokens, match_add)
 
 
@@ -146,20 +177,30 @@ def token_scrape(winner, tokens, match_add):
 
             # Get the tag team name
             current_team_name = token_soup.get_text()
+            logging.info(f"Scraping Tag Team: {current_team_name}")
 
             tag_team_add = TagTeam.objects.create(name=current_team_name)
             for current_ring_elem in tag_tokens:
+                # Convert text to scrapeable HTML
                 tag_member_soup = BeautifulSoup(current_ring_elem, "html.parser")
 
+                logging.info(f"Scraping Tag Team Member: {tag_member_soup.get_text()}")
+                # Scrape individual participant
                 participant_scrape(
                     tag_member_soup, winner, match_add, True, tag_team_add
                 )
 
         else:
+            # Scrape individual participant
+            logging.info(f"Scraping Singles Wreslter: {token_soup.get_text()}")
             participant_scrape(token_soup, False, match_add)
 
 
 def add_tags(strings):
+    """
+    Correct the result of splitting HTML by commas and readds arrows
+    to strings
+    """
     modified_strings = []
     for string in strings:
         if not string.startswith("<"):
@@ -173,13 +214,21 @@ def add_tags(strings):
 def participant_scrape(
     participant_soup, winner, match_add, is_tag_member=False, tag_team_add=None
 ):
+    """
+    Scrapes individual match participant information and creates objects for all of tem
+    """
     # Extract the site id with regex
     pattern = r"/wrestlers/.*-(\d+).html"
     if participant_soup.find("a") is None:
         return
+
     curr_link = participant_soup.find("a")["href"]
+    logging.info(f"Scraping Wrestler Link: {curr_link}")
+
     match = re.search(pattern, curr_link)
     curr_site_id = match.group(1)
+    logging.info(f"Scraping Wrestler Site ID: {curr_site_id}")
+
     wrestler_exists = Wrestler.objects.filter(site_id=curr_site_id).exists()
 
     # Add wrestler if it doesn't exist already in the database
@@ -188,6 +237,7 @@ def participant_scrape(
         new_wrestler_response = requests.get(base_url + curr_link)
         new_wrestler_soup = BeautifulSoup(new_wrestler_response.content, "html.parser")
         curr_wrestler_name = new_wrestler_soup.find("h1").get_text()
+        logging.info(f"Scraping New Wreslter: {curr_wrestler_name}")
 
         wrestler_add = Wrestler.objects.create(
             site_id=curr_site_id, name=curr_wrestler_name
@@ -196,6 +246,7 @@ def participant_scrape(
     # Get the wrestler at the site id
     curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
 
+    # Adds to TagTeam object's wrestlers list if needed
     if is_tag_member and tag_team_add is not None:
         tag_team_add.wrestlers.add(curr_wrestler)
 
