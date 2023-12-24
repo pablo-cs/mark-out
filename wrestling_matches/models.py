@@ -15,6 +15,7 @@ class Venue(models.Model):
 
 
 class Event(models.Model):
+    site_id = models.CharField(max_length=100, primary_key=True)
     name = models.CharField(max_length=100)
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE)
     promotion = models.ForeignKey(Promotion, on_delete=models.CASCADE)
