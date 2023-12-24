@@ -1,3 +1,4 @@
+from django.db import transaction
 from datetime import timedelta
 from bs4 import BeautifulSoup
 import logging
@@ -22,6 +23,7 @@ soup = BeautifulSoup(response.content, "html.parser")
 logging.basicConfig(level=logging.INFO)
 
 
+@transaction.atomic()
 def start_scrape():
     """ """
     pg_count = 1
@@ -69,6 +71,7 @@ def start_scrape():
             logging.error(f"Error occurred while scraping page {pg_count}: {e}")
 
 
+@transaction.atomic()
 def venue_scrape(card_soup):
     """
     Scrapes the venue information from a given card and returns
@@ -91,6 +94,7 @@ def venue_scrape(card_soup):
         logging.error(f"Error occurred while scraping venue: {e}")
 
 
+@transaction.atomic()
 def event_scrape(card_soup, venue_add, promotion_add, curr_date):
     """
     Scrapes the event information from a given card and returns
@@ -115,6 +119,7 @@ def event_scrape(card_soup, venue_add, promotion_add, curr_date):
         logging.error(f"Error occurred while scraping event: {card_soup}, {e}")
 
 
+@transaction.atomic()
 def card_scrape(card_soup, event_add):
     """
     Scrapes the matches from a card
@@ -174,6 +179,7 @@ def card_scrape(card_soup, event_add):
         logging.error(f"Error occurred while scraping card for: {event_add.name}, {e}")
 
 
+@transaction.atomic()
 def token_scrape(winner, tokens, match_add):
     """
     Scrapes participant information, adding new wrestlers and ring names
@@ -212,21 +218,7 @@ def token_scrape(winner, tokens, match_add):
         logging.error(f"Error occurred while scraping tokens: {tokens}, {e}")
 
 
-def add_tags(strings):
-    """
-    Correct the result of splitting HTML by commas and readds arrows
-    to strings
-    """
-    modified_strings = []
-    for string in strings:
-        if not string.startswith("<"):
-            string = "<" + string
-        if not string.endswith(">"):
-            string += ">"
-        modified_strings.append(string)
-    return modified_strings
-
-
+@transaction.atomic()
 def participant_scrape(
     participant_soup, winner, match_add, is_tag_member=False, tag_team_add=None
 ):
@@ -287,3 +279,18 @@ def participant_scrape(
         logging.error(
             f"Error occurred while scraping participant {participant_soup}: {e}"
         )
+
+
+def add_tags(strings):
+    """
+    Correct the result of splitting HTML by commas and readds arrows
+    to strings
+    """
+    modified_strings = []
+    for string in strings:
+        if not string.startswith("<"):
+            string = "<" + string
+        if not string.endswith(">"):
+            string += ">"
+        modified_strings.append(string)
+    return modified_strings
