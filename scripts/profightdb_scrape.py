@@ -14,6 +14,7 @@ from models import (
     Promotion,
     TagTeam,
     RingName,
+    Title,
 )
 
 base_url = "http://www.profightdb.com/"
@@ -48,6 +49,12 @@ def start_scrape():
                 curr_promotion = columns[1].find("a").get_text()
                 card_url = base_url + columns[2].find("a")["href"]
 
+                pattern = r"/cards/.*-(\d+).html"
+                curr_site_id = re.search(pattern, card_url).group(1)
+
+                event_exists = Event.objects.filter(site_id=curr_site_id).exists()
+                if event_exists:
+                    continue
                 # Create Promotion object from promotion name or retrieve existing promotion
                 promotion_add, created = Promotion.objects.get_or_create(
                     name=curr_promotion
@@ -58,7 +65,9 @@ def start_scrape():
                 card_soup = BeautifulSoup(card_response.content, "html.parser")
 
                 venue_add = venue_scrape(card_soup)
-                event_add = event_scrape(card_soup, venue_add, promotion_add, curr_date)
+                event_add = event_scrape(
+                    card_soup, curr_site_id, venue_add, promotion_add, curr_date
+                )
                 card_scrape(card_soup, event_add)
             # Increment page count
             pg_count += 1
@@ -95,7 +104,7 @@ def venue_scrape(card_soup):
 
 
 @transaction.atomic()
-def event_scrape(card_soup, venue_add, promotion_add, curr_date):
+def event_scrape(card_soup, site_id, venue_add, promotion_add, curr_date):
     """
     Scrapes the event information from a given card and returns
     an Event object
@@ -110,6 +119,7 @@ def event_scrape(card_soup, venue_add, promotion_add, curr_date):
 
         # Create Event object from card name, venue, promotion, and date
         return Event.objects.create(
+            site_id=site_id,
             name=curr_event_name,
             venue=venue_add,
             promotion=promotion_add,
@@ -158,16 +168,29 @@ def card_scrape(card_soup, event_add):
             curr_stipulation = columns[4].get_text()
             logging.info(f"Scraping Match Stipulation: {curr_stipulation}")
 
-            curr_title = columns[5].get_text()
-            logging.info(f"Scraping Match Title(s): {curr_title}")
+            curr_title_text = columns[5].get_text(separator="\n", strip=True)
+
+            # Split the text based on <br> tags and create a list
+            curr_titles = [
+                title.strip() for title in curr_title_text.split("\n") if title.strip()
+            ]
+
+            logging.info(f"Scraping Match Title(s): {curr_titles}")
 
             # Create Match object from Event, length, stipulation, and title
             match_add = Match.objects.create(
                 event=event_add,
                 duration=curr_duration,
                 stipulation=curr_stipulation,
-                title=curr_title,
             )
+
+            for title in curr_titles:
+                if title != "(Title Change)":
+                    # Create or get the Title object
+                    title_obj, created = Title.objects.get_or_create(name=title)
+
+                    # Add match_add to the many-to-many field only if it's not a "(Title Change)"
+                    title_obj.match.add(match_add)
 
             # Scrape participants
             logging.info("Scraping Left Columm Participants")
@@ -220,7 +243,12 @@ def token_scrape(winner, tokens, match_add):
 
 @transaction.atomic()
 def participant_scrape(
-    participant_soup, winner, match_add, is_tag_member=False, tag_team_add=None
+    participant_soup,
+    winner,
+    match_add,
+    is_tag_member=False,
+    tag_team_add=None,
+    champ=False,
 ):
     """
     Scrapes individual match participant information and creates objects for all of tem
@@ -263,6 +291,13 @@ def participant_scrape(
 
         current_ring_name = participant_soup.get_text()
 
+        if current_ring_name.startswith("amp;"):
+            current_ring_name = current_ring_name.replace("amp;", "", 1).strip()
+
+        if current_ring_name.endswith("(c)"):
+            current_ring_name = current_ring_name.replace("(c)", "", 1).strip()
+            champ = True
+
         # Create a RingName object if not found, or get the one found
         current_ring_model, created = RingName.objects.get_or_create(
             name=current_ring_name, wrestler=curr_wrestler
@@ -274,6 +309,7 @@ def participant_scrape(
             is_tag_team=is_tag_member,
             tag_team=tag_team_add,
             winner=winner,
+            champion=champ,
         )
     except Exception as e:
         logging.error(
