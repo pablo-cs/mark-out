@@ -26,7 +26,11 @@ class Match(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, default=1)
     duration = models.DurationField(default=timedelta(days=0), null=True, blank=True)
     stipulation = models.CharField(max_length=50, null=True, blank=True)
-    title = models.CharField(max_length=100)
+
+
+class Title(models.Model):
+    name = models.CharField(max_length=100)
+    matches = models.ManyToManyField("Match", related_name="titles")
 
 
 class TagTeam(models.Model):
@@ -50,3 +54,4 @@ class MatchParticipant(models.Model):
     is_tag_team = models.BooleanField(default=False)
     tag_team = models.ForeignKey(TagTeam, on_delete=models.CASCADE, null=True)
     winner = models.BooleanField(default=False)
+    champion = models.BooleanField(default=False)
