@@ -16,6 +16,7 @@ current_dir = os.path.dirname(os.path.realpath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
 sys.path.append(parent_dir)
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mark_out.settings")
+
 # Configure Django if it's not already configured
 if not django.conf.settings.configured:
     django.setup()
@@ -51,6 +52,8 @@ def start_scrape():
         try:
             rows = soup.find_all("tr", class_="gray")
 
+            if len(rows) < 1:
+                break
             # Go through each row
             for row in rows:
                 # Get all the columns for the row
@@ -70,22 +73,29 @@ def start_scrape():
                 if event_exists:
                     continue
                 # Create Promotion object from promotion name or retrieve existing promotion
-                promotion_add, created = Promotion.objects.get_or_create(
+                promotion_add, created_prom = Promotion.objects.get_or_create(
                     name=curr_promotion
                 )
+                create_verb_prom = "Created" if created_prom else "Retrieved"
+
                 promotion_add.save()
 
-                logging.info(f"Scraping promotion: {curr_promotion}")
+                logging.info(f"{create_verb_prom} promotion: {curr_promotion}")
 
                 card_response = requests.get(card_url)
                 card_soup = BeautifulSoup(card_response.content, "html.parser")
 
-                venue_add = venue_scrape(card_soup)
+                venue_add, created_ven = venue_scrape(card_soup)
+                create_verb_ven = "Created" if created_ven else "Retrieved"
+                logging.info(f"{create_verb_ven} Venue: {venue_add}")
+
                 venue_add.save()
 
-                event_add = event_scrape(
+                event_add, created_ev = event_scrape(
                     card_soup, curr_site_id, venue_add, promotion_add, curr_date
                 )
+                create_verb_ev = "Created" if created_ev else "Retrieved"
+                logging.info(f"{create_verb_ev} Event: {event_add}")
 
                 event_add.save()
 
@@ -107,7 +117,6 @@ def venue_scrape(card_soup):
     Scrapes the venue information from a given card and returns
     an Venue object
     """
-    base_url = "http://www.profightdb.com/"
     try:
         # Get all the location elements and store the venue name and location
         venue_elem = card_soup.find_all(
@@ -119,7 +128,7 @@ def venue_scrape(card_soup):
         # Create Venue object from venue name and location
         logging.info(f"Scraping Venue: {curr_venue} , {curr_location}")
 
-        return Venue.objects.create(name=curr_venue, location=curr_location)
+        return Venue.objects.get_or_create(name=curr_venue, location=curr_location)
 
     except Exception as e:
         logging.error(f"Error occurred while scraping venue: {e}")
@@ -131,7 +140,6 @@ def event_scrape(card_soup, site_id, venue_add, promotion_add, curr_date):
     Scrapes the event information from a given card and returns
     an Event object
     """
-    base_url = "http://www.profightdb.com/"
     try:
         # Get the name of the current card
         curr_event_name = (
@@ -141,7 +149,7 @@ def event_scrape(card_soup, site_id, venue_add, promotion_add, curr_date):
         logging.info(f"Scraping Event: {curr_event_name}")
 
         # Create Event object from card name, venue, promotion, and date
-        return Event.objects.create(
+        return Event.objects.get_or_create(
             site_id=site_id,
             name=curr_event_name,
             venue=venue_add,
@@ -157,7 +165,6 @@ def card_scrape(card_soup, event_add):
     """
     Scrapes the matches from a card
     """
-    base_url = "http://www.profightdb.com/"
     try:
         # Scraping table until have reached the rows
         table = card_soup.find("div", class_="table-wrapper")
@@ -207,14 +214,15 @@ def card_scrape(card_soup, event_add):
                 duration=curr_duration,
                 stipulation=curr_stipulation,
             )
-
+            logging.info(f"Created Match: {match_add}")
             match_add.save()
 
             for title in curr_titles:
                 if title != "(Title Change)":
                     # Create or get the Title object
                     title_obj, created = Title.objects.get_or_create(name=title)
-
+                    create_verb = "Created" if created else "Retrieved"
+                    logging.info(f"{create_verb} Title: {title_obj}")
                     # Add match_add to the many-to-many field only if it's not a "(Title Change)"
                     title_obj.matches.add(match_add)
                     title_obj.save()
@@ -235,7 +243,6 @@ def token_scrape(winner, tokens, match_add):
     Scrapes participant information, adding new wrestlers and ring names
     as they appear, and adding the match participant
     """
-    base_url = "http://www.profightdb.com/"
     try:
         for token in tokens:
             # Convert text to scrapeable HTML
@@ -248,7 +255,13 @@ def token_scrape(winner, tokens, match_add):
                 current_team_name = token_soup.get_text()
                 logging.info(f"Scraping Tag Team: {current_team_name}")
 
-                tag_team_add = TagTeam.objects.create(name=current_team_name)
+                tag_team_add, created = TagTeam.objects.get_or_create(
+                    name=current_team_name
+                )
+                create_verb = "Created" if created else "Retrieved"
+
+                logging.info(f"{create_verb} Tag Team: {tag_team_add}")
+
                 for current_ring_elem in tag_tokens:
                     # Convert text to scrapeable HTML
                     tag_member_soup = BeautifulSoup(current_ring_elem, "html.parser")
@@ -258,7 +271,12 @@ def token_scrape(winner, tokens, match_add):
                     )
                     # Scrape individual participant
                     participant_scrape(
-                        tag_member_soup, winner, match_add, True, tag_team_add
+                        participant_soup=tag_member_soup,
+                        winner=winner,
+                        match_add=match_add,
+                        new_team=created,
+                        is_tag_member=True,
+                        tag_team_add=tag_team_add,
                     )
 
             else:
@@ -274,6 +292,7 @@ def participant_scrape(
     participant_soup,
     winner,
     match_add,
+    new_team=False,
     is_tag_member=False,
     tag_team_add=None,
     champ=False,
@@ -281,7 +300,7 @@ def participant_scrape(
     """
     Scrapes individual match participant information and creates objects for all of tem
     """
-    base_url = "http://www.profightdb.com/"
+    base_url = "http://www.profightdb.com"
     try:
         # Extract the site id with regex
         pattern = r"/wrestlers/.*-(\d+).html"
@@ -306,19 +325,33 @@ def participant_scrape(
             new_wrestler_soup = BeautifulSoup(
                 new_wrestler_response.content, "html.parser"
             )
+
             curr_wrestler_name = new_wrestler_soup.find("h1").get_text().strip()
             logging.info(f"Scraping New Wreslter: {curr_wrestler_name}")
 
+            image_style_div = new_wrestler_soup.find("div", class_="image-style")
+            image_link = None
+            if image_style_div:
+                # Find the img tag within the div
+                image_tag = image_style_div.find("img")
+
+                if image_tag:
+                    # Get the image link (src attribute)
+                    image_link = base_url + image_tag.get("src")
+                    logging.info(f"Scraping Wrestler Image Link: {image_link}")
+
             wrestler_add = Wrestler.objects.create(
-                site_id=curr_site_id, name=curr_wrestler_name
+                site_id=curr_site_id, name=curr_wrestler_name, img_src=image_link
             )
             wrestler_add.save()
 
         # Get the wrestler at the site id
         curr_wrestler = Wrestler.objects.get(site_id=curr_site_id)
 
+        logging.info(f"Retrieved Wrestler: {curr_wrestler}")
+
         # Adds to TagTeam object's wrestlers list if needed
-        if is_tag_member and tag_team_add is not None:
+        if is_tag_member and tag_team_add is not None and new_team:
             tag_team_add.wrestlers.add(curr_wrestler)
 
         current_ring_name = participant_soup.get_text()
@@ -334,7 +367,9 @@ def participant_scrape(
         current_ring_model, created = RingName.objects.get_or_create(
             name=current_ring_name, wrestler=curr_wrestler
         )
+        create_verb = "Created" if created else "Retrieved"
 
+        logging.info(f"{create_verb} Ring Name: {current_ring_model}")
         current_ring_model.save()
 
         match_participant_add = MatchParticipant.objects.create(
@@ -346,6 +381,7 @@ def participant_scrape(
             champion=champ,
         )
 
+        logging.info(f"Created Match Participant: {match_participant_add}")
         match_participant_add.save()
 
     except Exception as e:
