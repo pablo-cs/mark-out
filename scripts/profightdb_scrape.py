@@ -36,10 +36,26 @@ from wrestling_matches.models import (
 logging.basicConfig(level=logging.INFO)
 
 
+# At the beginning of your script, define a function to save progress
+def save_progress(pg_count):
+    with open("progress_checkpoint.txt", "w") as file:
+        file.write(str(pg_count))
+
+
+# Function to load progress if a checkpoint exists
+def load_progress():
+    try:
+        with open("progress_checkpoint.txt", "r") as file:
+            return int(file.read().strip())
+    except FileNotFoundError:
+        return 1  # Starting page count if no checkpoint is found
+
+
 @transaction.atomic()
 def start_scrape():
     """ """
-    pg_count = 1
+    pg_count = load_progress()
+
     base_url = "http://www.profightdb.com/"
     page_url = "http://www.profightdb.com/cards/pg1-no.html"
     response = requests.get(page_url)
@@ -54,53 +70,57 @@ def start_scrape():
 
             if len(rows) < 1:
                 break
-            # Go through each row
-            for row in rows:
-                # Get all the columns for the row
-                columns = row.find_all("td")
 
-                # Get the date and convert to a Date object
-                curr_date = parse(columns[0].find("a").get_text())
+            with transaction.atomic():
+                # Go through each row
+                for row in rows:
+                    # Get all the columns for the row
+                    columns = row.find_all("td")
 
-                # Get the promotion and url card
-                curr_promotion = columns[1].find("a").get_text()
-                card_url = base_url + columns[2].find("a")["href"]
+                    # Get the date and convert to a Date object
+                    curr_date = parse(columns[0].find("a").get_text())
 
-                pattern = r"/cards/.*-(\d+).html"
-                curr_site_id = re.search(pattern, card_url).group(1)
+                    # Get the promotion and url card
+                    curr_promotion = columns[1].find("a").get_text()
+                    card_url = base_url + columns[2].find("a")["href"]
 
-                event_exists = Event.objects.filter(site_id=curr_site_id).exists()
-                if event_exists:
-                    continue
-                # Create Promotion object from promotion name or retrieve existing promotion
-                promotion_add, created_prom = Promotion.objects.get_or_create(
-                    name=curr_promotion
-                )
-                create_verb_prom = "Created" if created_prom else "Retrieved"
+                    pattern = r"/cards/.*-(\d+).html"
+                    curr_site_id = re.search(pattern, card_url).group(1)
 
-                promotion_add.save()
+                    event_exists = Event.objects.filter(site_id=curr_site_id).exists()
+                    if event_exists:
+                        continue
+                    # Create Promotion object from promotion name or retrieve existing promotion
+                    promotion_add, created_prom = Promotion.objects.get_or_create(
+                        name=curr_promotion
+                    )
+                    create_verb_prom = "Created" if created_prom else "Retrieved"
 
-                logging.info(f"{create_verb_prom} promotion: {curr_promotion}")
+                    promotion_add.save()
 
-                card_response = requests.get(card_url)
-                card_soup = BeautifulSoup(card_response.content, "html.parser")
+                    logging.info(f"{create_verb_prom} promotion: {curr_promotion}")
 
-                venue_add, created_ven = venue_scrape(card_soup)
-                create_verb_ven = "Created" if created_ven else "Retrieved"
-                logging.info(f"{create_verb_ven} Venue: {venue_add}")
+                    card_response = requests.get(card_url)
+                    card_soup = BeautifulSoup(card_response.content, "html.parser")
 
-                venue_add.save()
+                    venue_add, created_ven = venue_scrape(card_soup)
+                    create_verb_ven = "Created" if created_ven else "Retrieved"
+                    logging.info(f"{create_verb_ven} Venue: {venue_add}")
 
-                event_add, created_ev = event_scrape(
-                    card_soup, curr_site_id, venue_add, promotion_add, curr_date
-                )
-                create_verb_ev = "Created" if created_ev else "Retrieved"
-                logging.info(f"{create_verb_ev} Event: {event_add}")
+                    venue_add.save()
 
-                event_add.save()
+                    event_add, created_ev = event_scrape(
+                        card_soup, curr_site_id, venue_add, promotion_add, curr_date
+                    )
+                    create_verb_ev = "Created" if created_ev else "Retrieved"
+                    logging.info(f"{create_verb_ev} Event: {event_add}")
 
-                card_scrape(card_soup, event_add)
+                    event_add.save()
+
+                    card_scrape(card_soup, event_add)
+
             # Increment page count
+            save_progress(pg_count)
             pg_count += 1
 
             # Get new page url, update response object and soup
