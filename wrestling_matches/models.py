@@ -6,15 +6,15 @@ from datetime import date
 
 
 class Promotion(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=200)
 
     def __str__(self):
         return self.name
 
 
 class Venue(models.Model):
-    name = models.CharField(max_length=100)
-    location = models.CharField(max_length=100)
+    name = models.CharField(max_length=200)
+    location = models.CharField(max_length=200)
 
     def __str__(self):
         return f"{self.name}, {self.location}"
@@ -22,7 +22,7 @@ class Venue(models.Model):
 
 class Event(models.Model):
     site_id = models.CharField(max_length=100, primary_key=True)
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=500)
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE)
     promotion = models.ForeignKey(Promotion, on_delete=models.CASCADE)
     date = models.DateField(default=date.today)
@@ -34,14 +34,14 @@ class Event(models.Model):
 class Match(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, default=1)
     duration = models.DurationField(default=timedelta(days=0), null=True, blank=True)
-    stipulation = models.CharField(max_length=50, null=True, blank=True)
+    stipulation = models.CharField(max_length=1000, null=True, blank=True)
 
     def __str__(self):
         return f"Match at Event: {self.event.name}"
 
 
 class Title(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=500)
     matches = models.ManyToManyField("Match", related_name="titles")
 
     def __str__(self):
@@ -49,7 +49,7 @@ class Title(models.Model):
 
 
 class TagTeam(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=1000)
     wrestlers = models.ManyToManyField("Wrestler", related_name="tag_teams")
 
     def __str__(self):
