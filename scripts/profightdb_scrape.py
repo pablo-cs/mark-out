@@ -35,23 +35,26 @@ from wrestling_matches.models import (
 
 logging.basicConfig(level=logging.INFO)
 
+progress_file_path = os.path.join(current_dir, "current_progress.txt")
+
 
 # At the beginning of your script, define a function to save progress
 def save_progress(pg_count):
-    with open("progress_checkpoint.txt", "w") as file:
+    with open(progress_file_path, "w") as file:
         file.write(str(pg_count))
 
 
 # Function to load progress if a checkpoint exists
 def load_progress():
     try:
-        with open("progress_checkpoint.txt", "r") as file:
+        with open(progress_file_path, "r") as file:
+            logging.info("Progress File Found")
             return int(file.read().strip())
     except FileNotFoundError:
+        logging.error(f"Error occurred loading progress: {FileNotFoundError}")
         return 1  # Starting page count if no checkpoint is found
 
 
-@transaction.atomic()
 def start_scrape():
     """ """
     pg_count = load_progress()
@@ -129,6 +132,7 @@ def start_scrape():
             soup = BeautifulSoup(response.content, "html.parser")
         except Exception as e:
             logging.error(f"Error occurred while scraping page {pg_count}: {e}")
+            sys.exit(1)
 
 
 @transaction.atomic()
@@ -152,6 +156,7 @@ def venue_scrape(card_soup):
 
     except Exception as e:
         logging.error(f"Error occurred while scraping venue: {e}")
+        sys.exit(1)
 
 
 @transaction.atomic()
@@ -177,7 +182,8 @@ def event_scrape(card_soup, site_id, venue_add, promotion_add, curr_date):
             date=curr_date,
         )
     except Exception as e:
-        logging.error(f"Error occurred while scraping event: {card_soup}, {e}")
+        logging.error(f"Error occurred while scraping event: {e}")
+        sys.exit(1)
 
 
 @transaction.atomic()
@@ -211,12 +217,12 @@ def card_scrape(card_soup, event_add):
             # Get duration, stipulation, and title
             duration_str = columns[3].get_text()
             curr_duration = None
-            if not duration_str.isspace():
+            if len(duration_str) > 2:
                 minutes, seconds = map(int, duration_str.split(":"))
                 curr_duration = timedelta(minutes=minutes, seconds=seconds)
                 logging.info(f"Scraping Match Duration: {curr_duration}")
 
-            curr_stipulation = columns[4].get_text()
+            curr_stipulation = columns[4].get_text(separator="\n", strip=True)
             logging.info(f"Scraping Match Stipulation: {curr_stipulation}")
 
             curr_title_text = columns[5].get_text(separator="\n", strip=True)
@@ -238,7 +244,7 @@ def card_scrape(card_soup, event_add):
             match_add.save()
 
             for title in curr_titles:
-                if title != "(Title Change)":
+                if title.upper() != "(TITLE CHANGE)":
                     # Create or get the Title object
                     title_obj, created = Title.objects.get_or_create(name=title)
                     create_verb = "Created" if created else "Retrieved"
@@ -255,6 +261,7 @@ def card_scrape(card_soup, event_add):
             token_scrape(False, right_tokens, match_add)
     except Exception as e:
         logging.error(f"Error occurred while scraping card for: {event_add.name}, {e}")
+        sys.exit(1)
 
 
 @transaction.atomic()
@@ -305,6 +312,7 @@ def token_scrape(winner, tokens, match_add):
                 participant_scrape(token_soup, False, match_add)
     except Exception as e:
         logging.error(f"Error occurred while scraping tokens: {tokens}, {e}")
+        sys.exit(1)
 
 
 @transaction.atomic()
@@ -408,6 +416,7 @@ def participant_scrape(
         logging.error(
             f"Error occurred while scraping participant {participant_soup}: {e}"
         )
+        sys.exit(1)
 
 
 def add_tags(strings):
