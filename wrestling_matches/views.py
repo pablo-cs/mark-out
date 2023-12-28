@@ -21,15 +21,29 @@ def home_page_view():
     pass
 
 
+def search_by_query(model, query, **kwargs):
+    if query:
+        results = model.objects.filter(Q(**kwargs))
+        return list(results.values())
+    else:
+        return []
+
+
+def search_by_id(model, id):
+    models = model.object.get(id=id).values()
+    return models
+
+
 def wrestler_view(wrestler_id):
     wrestler = Wrestler.objects.get(id=wrestler_id).values()
-    return JsonResponse(list(wrestler), safe=True)
+    return JsonResponse(search_by_id(Wrestler, wrestler_id), safe=True)
 
 
-def search_wrestler(request, wrestler_id):
-    query = request
-    ring_names = RingName.objects.filter(Q(name__icontains=query))
-    return JsonResponse(list(ring_names), safe=True)
+def search_wrestler(request):
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(RingName, query, name__icontains=query), safe=True
+    )
 
 
 def match_view(match_id):
@@ -37,12 +51,14 @@ def match_view(match_id):
     return JsonResponse(list(match), safe=True)
 
 
-def search_match(request, match_id):
-    query = request
-    matches = Match.objects.filter(
-        Q(matchparticipant__ring_name__wrestler__name__icontains=query)
+def search_match(request):
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(
+            Match, query, matchparticipant__ring_name__wrestler__name__icontains=query
+        ),
+        safe=True,
     )
-    return JsonResponse(list(matches), safe=True)
 
 
 def promotion_view(promotion_id):
@@ -51,9 +67,10 @@ def promotion_view(promotion_id):
 
 
 def search_promotion(request):
-    query = request
-    promotions = Promotion.objects.filter(Q(name__icontains=query))
-    return JsonResponse(list(promotions), safe=True)
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(Promotion, query, name__icontains=query), safe=True
+    )
 
 
 def venue_view(venue_id):
@@ -62,11 +79,11 @@ def venue_view(venue_id):
 
 
 def search_venue(request):
-    query = request
-    venues = Promotion.objects.filter(
-        Q(name__icontains=query) | Q(location__icontains=query)
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(Venue, query, name__icontains=query, location__icontains=query),
+        safe=True,
     )
-    return JsonResponse(list(venues), safe=True)
 
 
 def tag_team_view(tag_team_id):
@@ -75,9 +92,11 @@ def tag_team_view(tag_team_id):
 
 
 def search_tag_team(request):
-    query = request
-    tag_team = TagTeam.objects.filter(Q(name__icontains=query))
-    return JsonResponse(list(tag_team), safe=True)
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(TagTeam, query, name__icontains=query),
+        safe=True,
+    )
 
 
 def title_view(title_id):
@@ -86,6 +105,8 @@ def title_view(title_id):
 
 
 def search_title(request):
-    query = request
-    titles = Title.objects.filter(Q(name__icontains=query))
-    return JsonResponse(list(titles), safe=True)
+    query = request.GET.get("query")
+    return JsonResponse(
+        search_by_query(Title, query, name__icontains=query),
+        safe=True,
+    )

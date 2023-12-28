@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 from datetime import datetime
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
-from profightdb_scrape import start_scrape  # Import your function to be tested
+from scripts.profightdb_scrape import start_scrape  # Import your function to be tested
 
 
 class TestScraping(unittest.TestCase):
