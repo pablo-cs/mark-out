@@ -30,12 +30,14 @@ def search_by_query(model, query, **kwargs):
 
 
 def search_by_id(model, id):
-    models = model.object.get(id=id).values()
-    return models
+    try:
+        models = model.objects.get(id=id).values()
+        return list(models)
+    except model.DoesNotExist:
+        return []
 
 
 def wrestler_view(wrestler_id):
-    wrestler = Wrestler.objects.get(id=wrestler_id).values()
     return JsonResponse(search_by_id(Wrestler, wrestler_id), safe=True)
 
 
@@ -47,8 +49,7 @@ def search_wrestler(request):
 
 
 def match_view(match_id):
-    match = Match.objects.get(id=match_id).values()
-    return JsonResponse(list(match), safe=True)
+    return JsonResponse(search_by_id(Match, match_id), safe=True)
 
 
 def search_match(request):
@@ -62,8 +63,7 @@ def search_match(request):
 
 
 def promotion_view(promotion_id):
-    promotion = Promotion.objects.get(id=promotion_id).values()
-    return JsonResponse(list(promotion), safe=True)
+    return JsonResponse(search_by_id(Promotion, promotion_id), safe=True)
 
 
 def search_promotion(request):
@@ -74,8 +74,7 @@ def search_promotion(request):
 
 
 def venue_view(venue_id):
-    venue = Venue.objects.get(id=venue_id).values()
-    return JsonResponse(list(venue), safe=True)
+    return JsonResponse(search_by_id(Venue, venue_id), safe=True)
 
 
 def search_venue(request):
@@ -87,8 +86,7 @@ def search_venue(request):
 
 
 def tag_team_view(tag_team_id):
-    tag_team = TagTeam.objects.get(id=tag_team_id).values()
-    return JsonResponse(list(tag_team), safe=True)
+    return JsonResponse(search_by_id(TagTeam, tag_team_id), safe=True)
 
 
 def search_tag_team(request):
@@ -100,8 +98,7 @@ def search_tag_team(request):
 
 
 def title_view(title_id):
-    title = TagTeam.objects.get(id=title_id).values()
-    return JsonResponse(list(title), safe=True)
+    return JsonResponse(search_by_id(Title, title_id), safe=True)
 
 
 def search_title(request):
