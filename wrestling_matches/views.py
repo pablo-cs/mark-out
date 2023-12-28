@@ -44,21 +44,19 @@ def wrestler_view(wrestler_id):
 def search_wrestler(request):
     query = request.GET.get("query")
     return JsonResponse(
-        search_by_query(RingName, query, name__icontains=query), safe=True
+        search_by_query(RingName, query, name__icontains=query), safe=False
     )
 
 
 def match_view(match_id):
-    return JsonResponse(search_by_id(Match, match_id), safe=True)
+    return JsonResponse(search_by_id(Match, match_id), safe=False)
 
 
 def search_match(request):
     query = request.GET.get("query")
     return JsonResponse(
-        search_by_query(
-            Match, query, matchparticipant__ring_name__wrestler__name__icontains=query
-        ),
-        safe=True,
+        search_by_query(Match, query, name__icontains=query),
+        safe=False,
     )
 
 

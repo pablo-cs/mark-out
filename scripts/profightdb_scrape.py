@@ -211,7 +211,7 @@ def card_scrape(card_soup, event_add):
             logging.info(f"Scraping Result: {curr_result}")
 
             # Get wrestlers in losers column
-            right_tokens = add_tags(str(columns[2]).split(">, <"))
+            right_tokens = add_tags(str(columns[2]).split(", <"))
             logging.info(f"Scraping Loser Column: {right_tokens}")
 
             # Get duration, stipulation, and title
@@ -255,10 +255,14 @@ def card_scrape(card_soup, event_add):
 
             # Scrape participants
             logging.info("Scraping Left Columm Participants")
-            token_scrape(curr_result, left_tokens, match_add)
+            match_name = token_scrape(curr_result, left_tokens, match_add)
 
             logging.info("Scraping Right Columm Participants")
-            token_scrape(False, right_tokens, match_add)
+            match_name += token_scrape(False, right_tokens, match_add)
+
+            match_add.name = match_name[:-4]
+            logging.info(f"Added Match Name: {match_add.name}")
+            match_add.save()
     except Exception as e:
         logging.error(f"Error occurred while scraping card for: {event_add.name}, {e}")
         sys.exit(1)
@@ -271,6 +275,7 @@ def token_scrape(winner, tokens, match_add):
     as they appear, and adding the match participant
     """
     try:
+        ret_str = ""
         for token in tokens:
             # Convert text to scrapeable HTML
             token_soup = BeautifulSoup(token, "html.parser")
@@ -282,6 +287,7 @@ def token_scrape(winner, tokens, match_add):
                 current_team_name = token_soup.get_text()
                 logging.info(f"Scraping Tag Team: {current_team_name}")
 
+                ret_str += current_team_name + " vs. "
                 tag_team_add, created = TagTeam.objects.get_or_create(
                     name=current_team_name
                 )
@@ -309,7 +315,12 @@ def token_scrape(winner, tokens, match_add):
             else:
                 # Scrape individual participant
                 logging.info(f"Scraping Singles Wreslter: {token_soup.get_text()}")
-                participant_scrape(token_soup, False, match_add)
+                ret_str += token_soup.get_text() + " vs. "
+                participant_scrape(
+                    participant_soup=token_soup, winner=winner, match_add=match_add
+                )
+
+        return ret_str
     except Exception as e:
         logging.error(f"Error occurred while scraping tokens: {tokens}, {e}")
         sys.exit(1)
@@ -334,6 +345,18 @@ def participant_scrape(
         pattern = r"/wrestlers/.*-(\d+).html"
         if participant_soup.find("a") is None:
             return
+        current_ring_name = participant_soup.get_text()
+
+        if current_ring_name.startswith("amp;"):
+            current_ring_name = current_ring_name.replace("amp;", "", 1).strip()
+
+        if current_ring_name.upper().endswith("(C)>"):
+            current_ring_name = current_ring_name.upper().replace("(C)>", "", 1).strip()
+            champ = True
+
+        if current_ring_name.upper().endswith("(C)"):
+            current_ring_name = current_ring_name.upper().replace("(C)", "", 1).strip()
+            champ = True
 
         curr_link = participant_soup.find("a")["href"]
         logging.info(f"Scraping Wrestler Link: {curr_link}")
@@ -382,15 +405,6 @@ def participant_scrape(
         if is_tag_member and tag_team_add is not None and new_team:
             tag_team_add.wrestlers.add(curr_wrestler)
 
-        current_ring_name = participant_soup.get_text()
-
-        if current_ring_name.startswith("amp;"):
-            current_ring_name = current_ring_name.replace("amp;", "", 1).strip()
-
-        if current_ring_name.upper().endswith("(C)"):
-            current_ring_name = current_ring_name.upper().replace("(C)", "", 1).strip()
-            champ = True
-
         # Create a RingName object if not found, or get the one found
         current_ring_model, created = RingName.objects.get_or_create(
             name=current_ring_name, wrestler=curr_wrestler
@@ -434,9 +448,24 @@ def add_tags(strings):
     return modified_strings
 
 
+def clean_ring_names():
+    # Find names ending with a space
+
+    try:
+        empty_space_rings = RingName.objects.filter(name__endswith="(c)")
+        # Perform merging for each duplicate set
+        for ring_name in empty_space_rings:
+            logging.info(f"Cleaning Traling Space Ring Name: {ring_name}")
+            ring_name.name = ring_name.name[:-3]  # Remove trailing spaces
+            ring_name.save()  # Save the updated name
+
+    except Exception as e:
+        logging.error(f"Error occurred while cleaning ring names: {e}")
+
+
 def main():
     try:
-        start_scrape()
+        clean_ring_names()
     except Exception as e:
         logging.error(f"An error occurred during scraping: {e}")
 

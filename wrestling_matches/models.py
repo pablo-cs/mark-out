@@ -32,6 +32,7 @@ class Event(models.Model):
 
 
 class Match(models.Model):
+    name = models.CharField(max_length=4000, null=True, blank=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, default=1)
     duration = models.DurationField(default=timedelta(days=0), null=True, blank=True)
     stipulation = models.CharField(max_length=1000, null=True, blank=True)
