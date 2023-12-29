@@ -38,7 +38,7 @@ class Match(models.Model):
     stipulation = models.CharField(max_length=1000, null=True, blank=True)
 
     def __str__(self):
-        return f"Match at Event: {self.event.name}"
+        return f"{self.name} at Event: {self.event.name}"
 
 
 class Title(models.Model):
