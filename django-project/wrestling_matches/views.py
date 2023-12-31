@@ -150,7 +150,7 @@ class SubEventSerializer(serializers.ModelSerializer):
     """Serializer for specific event data."""
 
     class Meta:
-        model = TagTeam
+        model = Event
         fields = ["site_id", "name", "promotion", "date"]
 
 
