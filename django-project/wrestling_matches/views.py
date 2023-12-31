@@ -21,6 +21,7 @@ from rest_framework import serializers
 class WrestlerSerializer(serializers.ModelSerializer):
     matches = serializers.SerializerMethodField()
     teams = serializers.SerializerMethodField()
+    ring_names = serializers.SerializerMethodField()
 
     class Meta:
         model = Wrestler
@@ -32,24 +33,24 @@ class WrestlerSerializer(serializers.ModelSerializer):
             id__in=matches_participated.values_list("match_id", flat=True)
         )
 
-        class WrestlerMatchSerializer(serializers.ModelSerializer):
-            class Meta:
-                model = Match
-                fields = ("id", "name", "event")
-
-        serializer = WrestlerMatchSerializer(matches, many=True)
+        serializer = MatchSerializer(matches, many=True)
         return serializer.data
 
     def get_teams(self, obj):
         teams = TagTeam.objects.filter(wrestlers=obj)
-
-        class WrestlerTagTeamSerializer(serializers.ModelSerializer):
-            class Meta:
-                model = TagTeam
-                fields = ("id", "name")
-
-        serializer = WrestlerTagTeamSerializer(teams, many=True)
+        serializer = SubTagTeamSerializer(teams, many=True)
         return serializer.data
+
+    def get_ring_names(self, obj):
+        ring_names = RingName.objects.filter(wrestler=obj)
+        serializer = SubRingNameSerializer(ring_names, many=True)
+        return serializer.data
+
+
+class SubWrestlerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Wrestler
+        fields = ["site_id", "name", "img_src"]
 
 
 class MatchSerializer(serializers.ModelSerializer):
@@ -68,13 +69,7 @@ class MatchSerializer(serializers.ModelSerializer):
 
     def get_event(self, obj):
         event = obj.event
-
-        class MatchEventSerializer(serializers.ModelSerializer):
-            class Meta:
-                model = Event
-                fields = ("site_id", "name")
-
-        serializer = MatchEventSerializer(event)
+        serializer = SubEventSerializer(event)
         return serializer.data
 
 
@@ -87,7 +82,8 @@ class VenueSerializer(serializers.ModelSerializer):
 
     def get_events(self, obj):
         events = Event.objects.filter(venue=obj)
-        serializer = EventSerializer(events, many=True)
+
+        serializer = SubEventSerializer(events, many=True)
         return serializer.data
 
 
@@ -102,6 +98,12 @@ class EventSerializer(serializers.ModelSerializer):
         matches = Match.objects.filter(event=obj)
         serializer = MatchSerializer(matches, many=True)
         return serializer.data
+
+
+class SubEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Event
+        fields = ["site_id", "name", "promotion", "date"]
 
 
 class TitleSerializer(serializers.ModelSerializer):
@@ -135,14 +137,14 @@ class TagTeamSerializer(serializers.ModelSerializer):
 
     def get_wrestlers(self, obj):
         wrestlers = obj.wrestlers.all()  # Retrieve all matches related to this title
-
-        class TagTeamWrestlerSerializer(serializers.ModelSerializer):
-            class Meta:
-                model = Wrestler
-                fields = ["site_id", "name", "img_src"]
-
-        serializer = TagTeamWrestlerSerializer(wrestlers, many=True)
+        serializer = SubWrestlerSerializer(wrestlers, many=True)
         return serializer.data
+
+
+class SubTagTeamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TagTeam
+        fields = ("id", "name")
 
 
 class PromotionSerializer(serializers.ModelSerializer):
@@ -175,6 +177,12 @@ class RingNameSerializer(serializers.ModelSerializer):
     class Meta:
         model = RingName
         fields = "__all__"
+
+
+class SubRingNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RingName
+        fields = ("id", "name")
 
 
 def search_by_query(model, query, **kwargs):
