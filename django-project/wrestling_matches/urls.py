@@ -1,5 +1,8 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework import routers
 from . import views
+
+router = routers.DefaultRouter()
 
 urlpatterns = [
     # Define your API endpoints here
@@ -21,5 +24,18 @@ urlpatterns = [
         "wrestler_matches/<str:wrestler_id>/",
         views.wrestler_matches,
         name="wrestler_matches",
+    ),
+    path("event_matches/<int:event_id>/", views.event_matches, name="event_matches"),
+    path(
+        "tag_team_matches/<int:tag_team_id>/",
+        views.tag_team_matches,
+        name="tag_team_matches",
+    ),
+    path("title_matches/<int:title_id>/", views.title_matches, name="title_matches"),
+    path("venue_events/<int:venue_id>/", views.venue_events, name="venue_events"),
+    path(
+        "promotion_events/<int:promotion_id>/",
+        views.promotion_events,
+        name="promotion_events",
     ),
 ]
