@@ -13,14 +13,16 @@ from .models import (
     Title,
 )
 
+from django.core.paginator import Paginator, EmptyPage
+import logging
+
 # Create your views here.
 
 from rest_framework import serializers
+from django.core.cache import cache
 
 
 class WrestlerSerializer(serializers.ModelSerializer):
-    matches = serializers.SerializerMethodField()
-    teams = serializers.SerializerMethodField()
     ring_names = serializers.SerializerMethodField()
 
     class Meta:
@@ -33,8 +35,8 @@ class WrestlerSerializer(serializers.ModelSerializer):
             id__in=matches_participated.values_list("match_id", flat=True)
         )
 
-        serializer = MatchSerializer(matches, many=True)
-        return serializer.data
+        # serializer = MatchSerializer(matches, many=True)
+        return matches
 
     def get_teams(self, obj):
         teams = TagTeam.objects.filter(wrestlers=obj)
@@ -42,7 +44,7 @@ class WrestlerSerializer(serializers.ModelSerializer):
         return serializer.data
 
     def get_ring_names(self, obj):
-        ring_names = RingName.objects.filter(wrestler=obj)
+        ring_names = RingName.objects.filter(wrestler=obj).values("id", "name")
         serializer = SubRingNameSerializer(ring_names, many=True)
         return serializer.data
 
@@ -74,53 +76,44 @@ class MatchSerializer(serializers.ModelSerializer):
 
 
 class VenueSerializer(serializers.ModelSerializer):
-    events = serializers.SerializerMethodField()
-
     class Meta:
         model = Venue
         fields = "__all__"
 
     def get_events(self, obj):
-        events = Event.objects.filter(venue=obj)
+        events = Event.objects.filter(venue=obj).values(
+            "site_id", "name", "promotion", "date"
+        )
+        return events
 
-        serializer = SubEventSerializer(events, many=True)
-        return serializer.data
+
+class SubEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TagTeam
+        fields = ["site_id", "name", "promotion", "date"]
 
 
 class EventSerializer(serializers.ModelSerializer):
-    matches = serializers.SerializerMethodField()
-
     class Meta:
         model = Event
         fields = "__all__"
 
     def get_matches(self, obj):
         matches = Match.objects.filter(event=obj)
-        serializer = MatchSerializer(matches, many=True)
-        return serializer.data
-
-
-class SubEventSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Event
-        fields = ["site_id", "name", "promotion", "date"]
+        return matches
 
 
 class TitleSerializer(serializers.ModelSerializer):
-    matches = serializers.SerializerMethodField()
-
     class Meta:
         model = Title
         fields = "__all__"
 
     def get_matches(self, obj):
         matches = obj.matches.all()  # Retrieve all matches related to this title
-        serializer = MatchSerializer(matches, many=True)
-        return serializer.data
+        return matches
 
 
 class TagTeamSerializer(serializers.ModelSerializer):
-    matches = serializers.SerializerMethodField()
     wrestlers = serializers.SerializerMethodField()
 
     class Meta:
@@ -132,11 +125,10 @@ class TagTeamSerializer(serializers.ModelSerializer):
         matches = Match.objects.filter(
             id__in=matches_participated.values_list("match_id", flat=True)
         )
-        serializer = MatchSerializer(matches, many=True)
-        return serializer.data
+        return matches
 
     def get_wrestlers(self, obj):
-        wrestlers = obj.wrestlers.all()  # Retrieve all matches related to this title
+        wrestlers = obj.wrestlers.all().values("site_id", "name", "img_src")
         serializer = SubWrestlerSerializer(wrestlers, many=True)
         return serializer.data
 
@@ -148,16 +140,15 @@ class SubTagTeamSerializer(serializers.ModelSerializer):
 
 
 class PromotionSerializer(serializers.ModelSerializer):
-    events = serializers.SerializerMethodField()
-
     class Meta:
         model = Promotion
         fields = "__all__"
 
     def get_events(self, obj):
-        events = Event.objects.filter(promotion=obj)
-        serializer = EventSerializer(events, many=True)
-        return serializer.data
+        events = Event.objects.filter(venue=obj).values(
+            "site_id", "name", "promotion", "date"
+        )
+        return events
 
 
 class MatchParticipantSerializer(serializers.ModelSerializer):
@@ -185,17 +176,27 @@ class SubRingNameSerializer(serializers.ModelSerializer):
         fields = ("id", "name")
 
 
-def search_by_query(model, query, **kwargs):
+def search_by_query(model, query, page_number=1, items_per_page=10, **kwargs):
     if query:
         results = model.objects.filter(Q(**kwargs))
-        return list(results.values())
+        paginator = Paginator(results, items_per_page)
+        try:
+            paginated_results = paginator.page(page_number)
+            return list(paginated_results.object_list.values())
+        except EmptyPage:
+            # If page is out of range, return an empty list (you can handle this differently as needed)
+            return []
     else:
         return []
 
 
-def wrestler_view(wrestler_id):
+def wrestler_view(request, wrestler_id):
     try:
-        wrestler = Wrestler.objects.get(site_id=wrestler_id)
+        cache_key = f"wrestler_{wrestler_id}"
+        wrestler = cache.get(cache_key)
+        if not wrestler:
+            wrestler = Wrestler.objects.get(site_id=wrestler_id)
+            cache.set(cache_key, wrestler, timeout=3600)  # Cache for 1 hour
         serializer = WrestlerSerializer(wrestler)
         return JsonResponse(serializer.data, safe=False)
     except Wrestler.DoesNotExist:
@@ -209,12 +210,16 @@ def search_wrestler(request):
     )
 
 
-def match_view(match_id):
+def match_view(request, match_id):
     try:
-        match = Match.objects.get(id=match_id)
+        cache_key = f"match{match_id}"
+        match = cache.get(cache_key)
+        if not match:
+            match = Match.objects.get(id=match_id)
+            cache.set(cache_key, match, timeout=3600)
         serializer = MatchSerializer(match)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except Match.DoesNotExist:
         return JsonResponse({"error": "Match not found"}, status=404)
 
 
@@ -226,12 +231,16 @@ def search_match(request):
     )
 
 
-def promotion_view(promotion_id):
+def promotion_view(request, promotion_id):
     try:
-        match = Promotion.objects.get(id=promotion_id)
-        serializer = PromotionSerializer(match)
+        cache_key = f"promotion{promotion_id}"
+        promotion = cache.get(cache_key)
+        if not promotion:
+            promotion = Promotion.objects.get(id=promotion_id)
+            cache.set(cache_key, promotion, timeout=3600)
+        serializer = PromotionSerializer(promotion)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except Promotion.DoesNotExist:
         return JsonResponse({"error": "Promotion not found"}, status=404)
 
 
@@ -242,12 +251,16 @@ def search_promotion(request):
     )
 
 
-def venue_view(venue_id):
+def venue_view(request, venue_id):
     try:
-        match = Venue.objects.get(id=venue_id)
-        serializer = VenueSerializer(match)
+        cache_key = f"venue{venue_id}"
+        venue = cache.get(cache_key)
+        if not venue:
+            venue = Venue.objects.get(id=venue_id)
+            cache.set(cache_key, venue, timeout=3600)
+        serializer = VenueSerializer(venue)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except Venue.DoesNotExist:
         return JsonResponse({"error": "Venue not found"}, status=404)
 
 
@@ -259,12 +272,16 @@ def search_venue(request):
     )
 
 
-def tag_team_view(tag_team_id):
+def tag_team_view(request, tag_team_id):
     try:
-        match = TagTeam.objects.get(id=tag_team_id)
-        serializer = TagTeamSerializer(match)
+        cache_key = f"tag_team{tag_team_id}"
+        tag_team = cache.get(cache_key)
+        if not tag_team:
+            tag_team = TagTeam.objects.get(id=tag_team_id)
+            cache.set(cache_key, tag_team, timeout=3600)
+        serializer = TagTeamSerializer(tag_team)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except TagTeam.DoesNotExist:
         return JsonResponse({"error": "Tag Team not found"}, status=404)
 
 
@@ -276,12 +293,16 @@ def search_tag_team(request):
     )
 
 
-def title_view(title_id):
+def title_view(request, title_id):
     try:
-        title = Title.objects.get(id=title_id)
+        cache_key = f"title{title_id}"
+        title = cache.get(cache_key)
+        if not title:
+            title = Title.objects.get(id=title_id)
+            cache.set(cache_key, title, timeout=3600)
         serializer = TitleSerializer(title)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except Title.DoesNotExist:
         return JsonResponse({"error": "Title not found"}, status=404)
 
 
@@ -293,12 +314,16 @@ def search_title(request):
     )
 
 
-def event_view(event_id):
+def event_view(request, event_id):
     try:
-        match = Event.objects.get(site_id=event_id)
-        serializer = EventSerializer(match)
+        cache_key = f"event{event_id}"
+        event = cache.get(cache_key)
+        if not event:
+            event = Event.objects.get(site_id=event_id)
+            cache.set(cache_key, event, timeout=3600)
+        serializer = EventSerializer(event)
         return JsonResponse(serializer.data, safe=False)
-    except Wrestler.DoesNotExist:
+    except Event.DoesNotExist:
         return JsonResponse({"error": "Event not found"}, status=404)
 
 
@@ -308,3 +333,75 @@ def search_event(request):
         search_by_query(Event, query, name__icontains=query),
         safe=False,
     )
+
+
+def wrestler_matches(request, wrestler_id):
+    return get_info(request, wrestler_id, Wrestler, Match)
+
+
+def event_matches(request, event_id):
+    return get_info(request, event_id, Event, Match)
+
+
+def tag_team_matches(request, tag_team_id):
+    return get_info(request, tag_team_id, TagTeam, Match)
+
+
+def title_matches(request, title_id):
+    return get_info(request, title_id, Title, Match)
+
+
+def venue_events(request, venue_id):
+    return get_info(request, venue_id, Venue, Event)
+
+
+def promotion_events(request, promotion_id):
+    return get_info(request, promotion_id, Promotion, Event)
+
+
+def get_info(request, id, model, retrieve):
+    model_info = {
+        Wrestler: ["wrestler", WrestlerSerializer],
+        TagTeam: ["tag_team", TagTeamSerializer],
+        Event: ["event", EventSerializer],
+        Title: ["title", TitleSerializer],
+        Venue: ["venue", VenueSerializer],
+        Promotion: ["promotion", PromotionSerializer],
+    }
+
+    retr_info = {Match: MatchSerializer, Event: EventSerializer}
+
+    model_str = model_info[model][0]
+    cache_key = f"{model_str}_{id}"
+    model_obj = cache.get(cache_key)
+
+    if not model_obj:
+        try:
+            if model == Wrestler or model == Event:
+                model_obj = model.objects.get(site_id=id)
+            else:
+                model_obj = model.objects.get(id=id)
+            cache.set(cache_key, model_obj, timeout=3600)  # Cache for 1 hour
+        except model.DoesNotExist:
+            return JsonResponse({"error": f"{model.__name__} not found"}, status=404)
+
+    model_serializer_type = model_info[model][1]
+    model_serializer = model_serializer_type(model_obj)
+
+    paginate_info = None
+    if retrieve == Match:
+        paginate_info = model_serializer.get_matches(model_obj)
+    else:
+        paginate_info = model_serializer.get_events(model_obj)
+
+    paginated_info = get_paginated_response(paginate_info, retr_info[retrieve], request)
+
+    return JsonResponse({"matches": paginated_info}, safe=False)
+
+
+def get_paginated_response(queryset, serializer_class, request):
+    paginator = Paginator(queryset, per_page=10)  # Adjust per_page as needed
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+    serialized_data = serializer_class(page_obj, many=True).data
+    return serialized_data
