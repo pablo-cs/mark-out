@@ -334,6 +334,31 @@ def search_by_query(model, query, page_number=1, items_per_page=10, **kwargs):
         return []
 
 
+def get_cached_object(cache_key, model, id):
+    """
+    Retrieve an object from cache or database and cache it.
+
+    Args:
+        cache_key: The key to use for caching.
+        model: The Django model for the object.
+        id: ID of the object.
+
+    Returns:
+        The cached object or None if not found.
+    """
+    cached_obj = cache.get(cache_key)
+    if not cached_obj:
+        try:
+            if model == Wrestler or model == Event:
+                cached_obj = model.objects.get(site_id=id)
+            else:
+                cached_obj = model.objects.get(id=id)
+            cache.set(cache_key, cached_obj, timeout=3600)  # Cache for 1 hour
+        except model.DoesNotExist:
+            cached_obj = None
+    return cached_obj
+
+
 def wrestler_view(request):
     """
     Retrieve details of a specific Wrestler.
@@ -348,7 +373,10 @@ def wrestler_view(request):
     if wrestler_id:
         try:
             cache_key = f"wrestler_{wrestler_id}"
-            wrestler = get_cached_object(cache_key, Wrestler, wrestler_id)
+            wrestler = cache.get(cache_key)
+            if not wrestler:
+                wrestler = Wrestler.objects.get(site_id=wrestler_id)
+                cache.set(cache_key, wrestler, timeout=3600)  # Cache for 1 hour
             serializer = WrestlerSerializer(wrestler)
             return JsonResponse(serializer.data, safe=False)
         except Wrestler.DoesNotExist:
@@ -388,7 +416,10 @@ def match_view(request):
     if match_id:
         try:
             cache_key = f"match{match_id}"
-            match = get_cached_object(cache_key, Match, match_id)
+            match = cache.get(cache_key)
+            if not match:
+                match = Match.objects.get(id=match_id)
+                cache.set(cache_key, match, timeout=3600)
             serializer = MatchSerializer(match)
             return JsonResponse(serializer.data, safe=False)
         except Match.DoesNotExist:
@@ -428,7 +459,10 @@ def promotion_view(request):
     if promotion_id:
         try:
             cache_key = f"promotion{promotion_id}"
-            promotion = get_cached_object(cache_key, Promotion, promotion_id)
+            promotion = cache.get(cache_key)
+            if not promotion:
+                promotion = Promotion.objects.get(id=promotion_id)
+                cache.set(cache_key, promotion, timeout=3600)
             serializer = PromotionSerializer(promotion)
             return JsonResponse(serializer.data, safe=False)
         except Promotion.DoesNotExist:
@@ -467,7 +501,10 @@ def venue_view(request):
     if venue_id:
         try:
             cache_key = f"venue{venue_id}"
-            venue = get_cached_object(cache_key, Venue, venue_id)
+            venue = cache.get(cache_key)
+            if not venue:
+                venue = Venue.objects.get(id=venue_id)
+                cache.set(cache_key, venue, timeout=3600)
             serializer = VenueSerializer(venue)
             return JsonResponse(serializer.data, safe=False)
         except Venue.DoesNotExist:
@@ -507,7 +544,10 @@ def tag_team_view(request):
     if tag_team_id:
         try:
             cache_key = f"tag_team{tag_team_id}"
-            tag_team = get_cached_object(cache_key, TagTeam, tag_team_id)
+            tag_team = cache.get(cache_key)
+            if not tag_team:
+                tag_team = TagTeam.objects.get(id=tag_team_id)
+                cache.set(cache_key, tag_team, timeout=3600)
             serializer = TagTeamSerializer(tag_team)
             return JsonResponse(serializer.data, safe=False)
         except TagTeam.DoesNotExist:
@@ -547,7 +587,10 @@ def title_view(request):
     if title_id:
         try:
             cache_key = f"title{title_id}"
-            title = get_cached_object(cache_key, Title, title_id)
+            title = cache.get(cache_key)
+            if not title:
+                title = Title.objects.get(id=title_id)
+                cache.set(cache_key, title, timeout=3600)
             serializer = TitleSerializer(title)
             return JsonResponse(serializer.data, safe=False)
         except Title.DoesNotExist:
@@ -588,7 +631,10 @@ def event_view(request):
     if event_id:
         try:
             cache_key = f"event{event_id}"
-            event = get_cached_object(cache_key, Event, event_id)
+            event = cache.get(cache_key)
+            if not event:
+                event = Event.objects.get(site_id=event_id)
+                cache.set(cache_key, event, timeout=3600)
             serializer = EventSerializer(event)
             return JsonResponse(serializer.data, safe=False)
         except Event.DoesNotExist:
@@ -790,34 +836,6 @@ def get_paginated_response(queryset, serializer_class, request):
     """
     paginator = Paginator(queryset, per_page=10)  # Adjust per_page as needed
     page_number = request.GET.get("page")
-    try:
-        page_obj = paginator.page(page_number)
-        serialized_data = serializer_class(page_obj, many=True).data
-    except EmptyPage:
-        serialized_data = []
+    page_obj = paginator.get_page(page_number)
+    serialized_data = serializer_class(page_obj, many=True).data
     return serialized_data
-
-
-def get_cached_object(cache_key, model, id):
-    """
-    Retrieve an object from cache or database and cache it.
-
-    Args:
-        cache_key: The key to use for caching.
-        model: The Django model for the object.
-        id: ID of the object.
-
-    Returns:
-        The cached object or None if not found.
-    """
-    cached_obj = cache.get(cache_key)
-    if not cached_obj:
-        try:
-            if model == Wrestler or model == Event:
-                cached_obj = model.objects.get(site_id=id)
-            else:
-                cached_obj = model.objects.get(id=id)
-            cache.set(cache_key, cached_obj, timeout=3600)  # Cache for 1 hour
-        except model.DoesNotExist:
-            cached_obj = None
-    return cached_obj

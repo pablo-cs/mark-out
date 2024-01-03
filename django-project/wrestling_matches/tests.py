@@ -14,6 +14,7 @@ from .models import (
     RingName,
     MatchParticipant,
 )
+from . import views
 
 
 class TestWrestlingViews(unittest.TestCase):
