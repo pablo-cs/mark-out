@@ -71,6 +71,22 @@ TEMPLATES = [
         },
     },
 ]
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+        },
+    },
+}
 
 WSGI_APPLICATION = "mark_out.wsgi.application"
 

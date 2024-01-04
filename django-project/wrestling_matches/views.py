@@ -126,6 +126,8 @@ class MatchSerializer(serializers.ModelSerializer):
 class VenueSerializer(serializers.ModelSerializer):
     """Serializer for Venue model."""
 
+    events = serializers.SerializerMethodField()
+
     class Meta:
         model = Venue
         fields = "__all__"
@@ -141,7 +143,7 @@ class VenueSerializer(serializers.ModelSerializer):
             Serialized data of events related to the venue.
         """
         events = Event.objects.filter(venue=obj).values(
-            "site_id", "name", "promotion", "date"
+            "site_id", "name", "promotion", "date", "venue"
         )
         return events
 
@@ -261,9 +263,8 @@ class PromotionSerializer(serializers.ModelSerializer):
         Returns:
             Serialized data of events related to the promotion.
         """
-        events = Event.objects.filter(venue=obj).values(
-            "site_id", "name", "promotion", "date"
-        )
+        events = Event.objects.filter(promotion=obj)
+
         return events
 
 
@@ -762,6 +763,9 @@ def promotion_events(request):
         return JsonResponse({"error": "Invalid Arguments"}, status=404)
 
 
+import logging
+
+
 def get_info(request, id, model, retrieve):
     """
     Fetch information based on given parameters.
@@ -775,6 +779,12 @@ def get_info(request, id, model, retrieve):
     Returns:
         JSON response with the requested information.
     """
+    logger = logging.getLogger(__name__)  # Get logger for the current module
+    logger.info(
+        "get_info function started with parameters: "
+        f"id={id}, model={model}, retrieve={retrieve}"
+    )
+
     model_info = {
         Wrestler: ["wrestler", WrestlerSerializer],
         TagTeam: ["tag_team", TagTeamSerializer],
@@ -790,8 +800,13 @@ def get_info(request, id, model, retrieve):
     }
 
     model_str = model_info[model][0]
+    logger.debug(f"model_str set to: {model_str}")
+
     cache_key = f"{model_str}_{id}"
+    logger.debug(f"cache_key set to: {cache_key}")
+
     model_obj = cache.get(cache_key)
+    logger.debug(f"model_obj retrieved from cache: {model_obj}")
 
     if not model_obj:
         try:
@@ -800,24 +815,36 @@ def get_info(request, id, model, retrieve):
             else:
                 model_obj = model.objects.get(id=id)
             cache.set(cache_key, model_obj, timeout=3600)  # Cache for 1 hour
+            logger.info(f"model_obj retrieved from database: {model_obj}")
         except model.DoesNotExist:
+            logger.error(f"{model.__name__} not found with ID: {id}")
             return JsonResponse({"error": f"{model.__name__} not found"}, status=404)
 
     model_serializer_type = model_info[model][1]
+    logger.debug(f"model_serializer_type set to: {model_serializer_type}")
+
     model_serializer = model_serializer_type(model_obj)
+    logger.debug(f"model_serializer initialized: {model_serializer}")
 
     paginate_info = None
     paginate_str = retr_info[retrieve][0]
+    logger.debug(f"paginate_str set to: {paginate_str}")
+
     paginate_serializer_type = retr_info[retrieve][1]
+    logger.debug(f"paginate_serializer_type set to: {paginate_serializer_type}")
+
     if retrieve == Match:
         paginate_info = model_serializer.get_matches(model_obj)
-        paginate_str
+        logger.debug(f"paginate_info (Match) set to: {paginate_info}")
     else:
         paginate_info = model_serializer.get_events(model_obj)
+        logger.debug(f"{model_serializer}.get_events({model_obj})")
+        logger.debug(f"paginate_info (Event) set to: {paginate_info}")
 
     paginated_info = get_paginated_response(
         paginate_info, paginate_serializer_type, request
     )
+    logger.debug(f"paginated_info set to: {paginated_info}")
 
     return JsonResponse({f"{paginate_str}": paginated_info}, safe=False)
 

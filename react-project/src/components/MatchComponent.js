@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { getMatch } from '../services/api'; // Update the path as needed
 
-match
-const matchDetails = () => {
+
+const MatchDetails = () => {
   const [matchData, setMatchData] = useState(null);
   const matchId = 350; // Replace with the desired match ID
 
@@ -39,4 +39,4 @@ const matchDetails = () => {
   );
 };
 
-export default matchDetails;
+export default MatchDetails;

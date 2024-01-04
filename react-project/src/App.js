@@ -1,12 +1,20 @@
 import React from 'react';
-import WrestlerComponent from './components/WrestlerComponent'; // Update the path accordingly
+import {
+  WrestlerComponent,
+  EventComponent,
+  MatchComponent,
+  TagTeamComponent,
+  TitleComponent,
+  VenueComponent,
+  PromotionComponent,
+  HomePage
+} from './components'; // Update the path accordingly
 
 const App = () => {
   return (
-    <div>
-      {/* Other components or elements */}
-      <WrestlerComponent />
-      {/* Other components or elements */}
+    <div className="app">
+      <HomePage />
+      {/* Use other components as needed */}
     </div>
   );
 };
